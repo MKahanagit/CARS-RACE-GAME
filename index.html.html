@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>מירוץ העולמות</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:#0b0b1e;overflow:hidden;font-family:Arial,"Segoe UI",sans-serif;user-select:none;-webkit-user-select:none;touch-action:none}
+  #wrap{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(100vw,calc(100vh*16/9));aspect-ratio:16/9;background:#000;overflow:hidden;border-radius:6px}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(10,10,30,.55);color:#fff;text-align:center;padding:16px}
+  .hidden{display:none !important}
+  h1{margin:0;font-size:clamp(30px,6vw,64px);color:#ffd400;text-shadow:0 4px 0 #000,0 0 18px rgba(255,212,0,.6);font-weight:900}
+  h2{margin:0;font-size:clamp(22px,4vw,38px);color:#ffd400;text-shadow:0 3px 0 #000;font-weight:900}
+  p{margin:0;font-size:clamp(15px,2.4vw,22px);text-shadow:0 2px 0 #000}
+  .btn{font:900 clamp(16px,3vw,26px) Arial,sans-serif;color:#222;background:#ffd400;border:4px solid #000;border-radius:18px;padding:10px 26px;box-shadow:0 6px 0 #000;cursor:pointer;min-width:160px}
+  .btn:active{transform:translateY(4px);box-shadow:0 2px 0 #000}
+  .btn:disabled{background:#777;color:#444;cursor:not-allowed}
+  .btn.alt{background:#fff}
+  .btn.small{min-width:0;padding:6px 16px;font-size:15px;box-shadow:0 3px 0 #000;border-width:3px}
+  .grid{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:10px;width:min(92%,660px)}
+  .lvl{display:flex;flex-direction:column;align-items:center;gap:2px;background:#fff;color:#222;border:4px solid #000;border-radius:16px;padding:8px 6px;box-shadow:0 5px 0 #000;cursor:pointer;font-weight:900;font-family:Arial,sans-serif}
+  .lvl:disabled{opacity:.55;cursor:not-allowed}
+  .lvl .n{font-size:clamp(20px,3.4vw,30px);color:#ff9800;text-shadow:0 2px 0 #000}
+  .lvl .t{font-size:clamp(11px,1.7vw,15px)}
+  .lvl .r{font-size:clamp(11px,1.6vw,14px);color:#2e7d32;min-height:16px}
+  #ctrls{--s:clamp(64px,9vw,84px);position:absolute;inset:0;pointer-events:none}
+  .ctrl{position:absolute;bottom:14px;width:var(--s);height:var(--s);border-radius:50%;border:4px solid #000;background:rgba(255,212,0,.9);color:#222;font-size:clamp(24px,4vw,36px);font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:0 5px 0 #000;pointer-events:auto;padding:0;touch-action:none}
+  .ctrl.on{transform:translateY(3px) scale(.94);background:#fff;box-shadow:0 2px 0 #000}
+  #bLeft{left:16px}
+  #bRight{left:calc(16px + var(--s) + 12px)}
+  #bGas{right:16px}
+  #bBrake{right:calc(16px + var(--s) + 12px)}
+  #btnMenu{position:absolute;top:62px;left:16px;pointer-events:auto}
+  #rot{display:none !important;background:#0b0b1e;z-index:9}
+  @media (orientation:portrait){ #rot{display:flex !important} }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c" width="960" height="540"></canvas>
+
+  <div id="scr-loading" class="screen">
+    <h2>טוען משחק...</h2>
+    <p id="loadTxt">0%</p>
+  </div>
+
+  <div id="scr-start" class="screen hidden">
+    <h1>מירוץ העולמות</h1>
+    <p>שלוט במכונית, קפוץ מעל האש, וסיים במקום הכי גבוה!</p>
+    <button class="btn" id="btnStart">התחל</button>
+  </div>
+
+  <div id="scr-select" class="screen hidden">
+    <h2>בחר שלב</h2>
+    <div class="grid" id="grid"></div>
+    <button class="btn alt" id="btnBack">חזרה</button>
+  </div>
+
+  <div id="scr-finish" class="screen hidden">
+    <h2 id="finTitle"></h2>
+    <p id="finMsg"></p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+      <button class="btn" id="btnNext">שלב הבא</button>
+      <button class="btn alt" id="btnRetry">שחק שוב</button>
+      <button class="btn alt" id="btnSelect">בחירת שלב</button>
+    </div>
+  </div>
+
+  <div id="ctrls" class="hidden">
+    <button class="ctrl" id="bLeft" title="ימינה/שמאלה">◀</button>
+    <button class="ctrl" id="bRight">▶</button>
+    <button class="ctrl" id="bGas" title="גז">▲</button>
+    <button class="ctrl" id="bBrake" title="בלם">▼</button>
+    <button class="btn alt small" id="btnMenu">תפריט</button>
+  </div>
+
+  <div id="rot" class="screen"><h2>סובב את המכשיר לרוחב</h2></div>
+</div>
+
+<script>
+/* ========================= הגדרות כלליות ========================= */
+const W = 960, H = 540;
+const Y_PLAYER = H * 0.8;          // מיקום מכונית השחקן על המסך (קבוע)
+const SCALE = 0.9;                 // יחס בין יחידות מסלול לפיקסלים
+const RAMP = 60, FIRE = 70;        // אורך רמפה ואש (ביחידות מסלול)
+const JUMP_SPEED = 260;            // מהירות מינימלית לקפיצה מעל הרמפה
+const JUMP_TIME = 0.6;             // משך הקפיצה בשניות
+const MAX_SPEED = 520;
+const STUN_TIME = 0.6;             // זמן האטה אחרי פגיעה באש
+const ROAD_CAR_W = 118;
+
+const WORLDS = [
+  { name: 'Candy Land Raceway',       file: 'assets/world_1_candy.jpg' },
+  { name: 'Dinosaur Jungle Safari',   file: 'assets/world_2_dino.jpg' },
+  { name: 'Underwater Atlantis',      file: 'assets/world_3_atlantis.jpg' },
+  { name: 'Outer Space Odyssey',      file: 'assets/world_4_space.jpg' },
+  { name: 'Frozen Winter Wonderland', file: 'assets/world_5_frozen.jpg' },
+  { name: 'Fairytale Kingdom',        file: 'assets/world_6_fairytale.jpg' },
+  { name: 'Monster City Mayhem',      file: 'assets/world_7_monster_city.jpg' },
+  { name: 'Pirate Cove Adventure',    file: 'assets/world_8_pirate.jpg' },
+  { name: 'Volcanic Fire Circuit',    file: 'assets/world_9_volcano.jpg' }
+];
+
+// המכונית הראשונה היא מכונית השחקן. השאר הם היריבים.
+// fast = מתחרה על המקום הראשון, slow = נוסע לאט יותר.
+const CARS = [
+  { id: 'player', label: 'אתה', file: 'assets/car_5_player.png', player: true },
+  { id: 'P1', file: 'assets/car_p1_chococo.png',  group: 'fast', lane: -0.6 },
+  { id: '2',  file: 'assets/car_2_scorpion.png',  group: 'fast', lane: 0.6 },
+  { id: '3',  file: 'assets/car_3_purple.png',    group: 'fast', lane: -0.2 },
+  { id: '4',  file: 'assets/car_4_dinofuel.png',  group: 'slow', lane: 0.3 },
+  { id: '6',  file: 'assets/car_6_flame.png',     group: 'slow', lane: -0.45 }
+];
+
+/* ========================= מצב המשחק ========================= */
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const IMG = {};
+const input = { left: false, right: false, up: false, down: false };
+let G = null;                 // מצב מירוץ נוכחי
+let menuLvl = null;           // רקע לתפריטים
+let idleT = 0;
+let curStage = 1;
+let maxUnlocked = 1;
+let results = {};             // results[שלב] = המקום הטוב ביותר
+
+/* ========================= עזרים ========================= */
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rnd = (a, b) => a + Math.random() * (b - a);
+function centerX(d, lvl) { return W / 2 + lvl.amp * Math.sin(d * lvl.freq); }
+function screenY(d, dp) { return Y_PLAYER - (d - dp) * SCALE; }
+function airborne(c) { return G && G.t <= c.airUntil; }
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function outlinedText(txt, x, y, color, size, stroke) {
+  ctx.font = `900 ${size}px Arial, sans-serif`;
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = stroke || 6;
+  ctx.strokeStyle = '#000';
+  ctx.strokeText(txt, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(txt, x, y);
+}
+
+/* ========================= יצירת שלב ========================= */
+function makeLevel(s) {
+  const L = 7000 + s * 500;          // אורך המסלול
+  const n = s + 1;                   // מספר מכשולי אש: שלב 1 = 2, שלב 9 = 10
+  const start = 900, end = L - 600;
+  const sp = (end - start) / n;
+  const obs = [];
+  for (let i = 0; i < n; i++) {
+    const f = start + sp * (i + 0.5) + rnd(-0.2, 0.2) * sp;
+    obs.push({ fireStart: f, rampStart: f - RAMP, fireEnd: f + FIRE });
+  }
+  return {
+    stage: s, L, obs,
+    amp: 50 + s * 10,                // כמה המסלול מתפתל
+    freq: 0.0016 + s * 0.00018,      // כמה מהר הוא מתפתל
+    half: 170 - s * 4                // חצי רוחב הכביש (נהיה צר יותר)
+  };
+}
+
+function makeCars() {
+  return CARS.map((def, i) => ({
+    def, id: def.id, isPlayer: !!def.player,
+    d: def.player ? 0 : -30 * i,     // המכוניות היריבות מתחילות מאחורי קו הזינוק
+    lat: 0, speed: 0,
+    group: def.group, laneBase: def.lane || 0, phase: i * 1.7,
+    target: 0, targetT: 0,
+    stun: 0, airUntil: -1, ramp: [], fire: [],
+    jumps: 0, hits: 0, bumpCd: 0, finishTime: null
+  }));
+}
+
+function pickTarget(c, s) {
+  const base = c.group === 'fast' ? 430 + s * 9 : 320 + s * 7;
+  return base * rnd(0.95, 1.05);
+}
+
+/* ========================= לוגיקה ========================= */
+function toast(msg) { if (G) { G.toast = msg; G.toastT = 1.6; } }
+
+function processObstacles(c) {
+  const obs = G.lvl.obs;
+  for (let i = 0; i < obs.length; i++) {
+    const o = obs[i];
+    if (!c.ramp[i] && c.d >= o.rampStart) {
+      c.ramp[i] = true;
+      if (c.speed >= JUMP_SPEED) {
+        c.airUntil = G.t + JUMP_TIME;
+        if (c.isPlayer) toast('קפיצה!');
+      } else if (c.isPlayer) {
+        toast('נסיעה מהירה יותר תעזור לקפוץ!');
+      }
+    }
+    if (!c.fire[i] && c.d >= o.fireStart) {
+      c.fire[i] = true;
+      if (airborne(c)) {
+        c.jumps++;
+      } else {
+        c.stun = STUN_TIME;
+        c.speed = Math.min(c.speed, 140);
+        c.hits++;
+        if (c.isPlayer) toast('אוי! האש האטה אותך');
+      }
+    }
+  }
+}
+
+function step(dt) {
+  const L = G.lvl.L;
+  G.t += dt;
+
+  for (const c of G.cars) {
+    if (c.stun > 0) c.stun -= dt;
+
+    if (c.isPlayer) {
+      if (c.finishTime === null) {
+        if (input.up && c.stun <= 0) c.speed += 260 * dt;
+        else if (input.down) c.speed -= 380 * dt;
+        else c.speed -= 70 * dt;
+        c.speed = clamp(c.speed, 0, MAX_SPEED);
+        c.lat = clamp(c.lat + ((input.right ? 1 : 0) - (input.left ? 1 : 0)) * 1.1 * dt, -0.9, 0.9);
+      }
+    } else {
+      if (c.finishTime === null) {
+        c.targetT -= dt;
+        if (c.targetT <= 0) { c.target = pickTarget(c, G.lvl.stage); c.targetT = rnd(2.5, 4); }
+        c.speed += clamp(c.target - c.speed, -220 * dt, 220 * dt);
+        c.speed = clamp(c.speed, 0, MAX_SPEED);
+      }
+      c.lat = clamp(c.laneBase + 0.3 * Math.sin(G.t * 0.9 + c.phase), -0.85, 0.85);
+    }
+
+    if (c.stun > 0) c.speed = Math.min(c.speed, 170);
+
+    if (c.finishTime === null) {
+      c.d += c.speed * dt;
+      if (c.d >= L) {
+        c.d = L; c.speed = 0; c.finishTime = G.t;
+        if (c.isPlayer && G.phase === 'race') { G.phase = 'finishing'; G.endTimer = 1.4; }
+      }
+    }
+    processObstacles(c);
+  }
+
+  // התנגשות קלה עם יריב
+  const p = G.cars[0];
+  if (p.bumpCd > 0) p.bumpCd -= dt;
+  if (p.finishTime === null) {
+    for (let i = 1; i < G.cars.length; i++) {
+      const r = G.cars[i];
+      if (r.finishTime !== null) continue;
+      if (Math.abs(r.d - p.d) < 60 && Math.abs(r.lat - p.lat) < 0.45 &&
+          p.bumpCd <= 0 && !airborne(r) && !airborne(p)) {
+        p.speed *= 0.65;
+        p.bumpCd = 0.9;
+        toast('פגיעה! האטה קלה');
+      }
+    }
+  }
+}
+
+function ranking() {
+  return G.cars.slice().sort((a, b) => {
+    const fa = a.finishTime !== null, fb = b.finishTime !== null;
+    if (fa && fb) return a.finishTime - b.finishTime;
+    if (fa) return -1;
+    if (fb) return 1;
+    return b.d - a.d;
+  });
+}
+
+/* ========================= ציור ========================= */
+function drawBackground(stage) {
+  const im = IMG[WORLDS[stage - 1].file];
+  const iw = im.naturalWidth, ih = im.naturalHeight * 0.85;   // חותך את כיתוב השם בתחתית
+  const sc = Math.max(W / iw, H / ih), dw = iw * sc, dh = ih * sc;
+  ctx.drawImage(im, 0, 0, iw, ih, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawRoad(dp, lvl) {
+  const step = 3;
+  for (let y = 0; y < H; y += step) {
+    const d = dp + (Y_PLAYER - y) / SCALE;
+    const cx = centerX(d, lvl), hw = lvl.half;
+    ctx.fillStyle = Math.floor(d / 60) % 2 === 0 ? '#4a4a5c' : '#40404f';
+    ctx.fillRect(cx - hw, y, hw * 2, step + 1);
+    ctx.fillStyle = Math.floor(d / 30) % 2 === 0 ? '#ff3b3b' : '#ffffff';
+    ctx.fillRect(cx - hw - 10, y, 10, step + 1);
+    ctx.fillRect(cx + hw, y, 10, step + 1);
+    if (Math.floor(d / 50) % 2 === 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillRect(cx - 3, y, 6, step + 1);
+    }
+  }
+}
+
+function drawLine(d, dp, lvl, label) {
+  const y = screenY(d, dp);
+  if (y < -20 || y > H + 20) return;
+  const cx = centerX(d, lvl), hw = lvl.half, cells = 12, cw = hw * 2 / cells;
+  for (let i = 0; i < cells; i++) {
+    ctx.fillStyle = i % 2 ? '#111' : '#fff';
+    ctx.fillRect(cx - hw + i * cw, y - 6, cw, 12);
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  outlinedText(label, cx, y - 10, '#ffd400', 18, 5);
+}
+
+function drawObstacles(dp, lvl, t) {
+  for (const o of lvl.obs) {
+    const yRampB = screenY(o.rampStart, dp);
+    const yFire = screenY(o.fireStart, dp);
+    const yFireEnd = screenY(o.fireEnd, dp);
+    if (yRampB < -100 || yFireEnd > H + 100) continue;
+    const hw = lvl.half;
+    const cxB = centerX(o.rampStart, lvl), cxT = centerX(o.fireStart, lvl);
+
+    // הרמפה
+    const g = ctx.createLinearGradient(0, yFire, 0, yRampB);
+    g.addColorStop(0, '#ffb74d');
+    g.addColorStop(1, '#e07b1a');
+    ctx.beginPath();
+    ctx.moveTo(cxB - hw, yRampB);
+    ctx.lineTo(cxB + hw, yRampB);
+    ctx.lineTo(cxT + hw * 0.8, yFire);
+    ctx.lineTo(cxT - hw * 0.8, yFire);
+    ctx.closePath();
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#000';
+    ctx.stroke();
+
+    // האש
+    const cxF = centerX(o.fireStart, lvl);
+    ctx.fillStyle = 'rgba(255,90,0,0.35)';
+    ctx.fillRect(cxF - hw - 6, yFireEnd - 20, hw * 2 + 12, yFire - yFireEnd + 20);
+    const cols = 14, cw = hw * 2 / cols;
+    for (let i = 0; i < cols; i++) {
+      const x = cxF - hw + i * cw + cw / 2;
+      const fh = 40 + 18 * Math.abs(Math.sin(t * 9 + i * 1.3));
+      ctx.fillStyle = '#ff6a00';
+      ctx.beginPath();
+      ctx.moveTo(x - cw * 0.7, yFire);
+      ctx.quadraticCurveTo(x, yFire - fh * 0.6, x, yFire - fh);
+      ctx.quadraticCurveTo(x, yFire - fh * 0.6, x + cw * 0.7, yFire);
+      ctx.fill();
+      ctx.fillStyle = '#ffd400';
+      ctx.beginPath();
+      ctx.moveTo(x - cw * 0.35, yFire);
+      ctx.quadraticCurveTo(x, yFire - fh * 0.4, x, yFire - fh * 0.6);
+      ctx.quadraticCurveTo(x, yFire - fh * 0.4, x + cw * 0.35, yFire);
+      ctx.fill();
+    }
+  }
+}
+
+function drawCars(cars, dp, lvl, t) {
+  const list = cars
+    .map(c => ({ c, x: centerX(c.d, lvl) + c.lat * lvl.half, y: screenY(c.d, dp) }))
+    .filter(o => o.y > -120 && o.y < H + 120)
+    .sort((a, b) => a.y - b.y);
+
+  for (const o of list) {
+    const c = o.c, img = IMG[c.def.file];
+    const k = airborne(c)
+      ? Math.sin(clamp((t - (c.airUntil - JUMP_TIME)) / JUMP_TIME, 0, 1) * Math.PI)
+      : 0;
+    const w = (ROAD_CAR_W + (c.isPlayer ? 8 : 0)) * (1 + 0.12 * k);
+    const h = w * img.naturalHeight / img.naturalWidth;
+    const lift = k * 28;
+
+    // צל
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(o.x, o.y + h * 0.32, w * 0.42 * (1 - 0.2 * k), h * 0.09, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // המכונית
+    ctx.drawImage(img, o.x - w / 2, o.y - h / 2 - lift, w, h);
+
+    // תווית לשחקן
+    if (c.isPlayer) {
+      ctx.font = 'bold 16px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const tw = ctx.measureText('אתה').width + 18;
+      const ty = o.y - h / 2 - lift - 16;
+      ctx.fillStyle = '#ffd400';
+      rr(o.x - tw / 2, ty - 13, tw, 26, 10);
+      ctx.fill();
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#222';
+      ctx.fillText('אתה', o.x, ty);
+    }
+  }
+}
+
+function drawScene(dp, lvl, cars, t) {
+  drawBackground(lvl.stage);
+  drawRoad(dp, lvl);
+  drawLine(0, dp, lvl, 'זינוק');
+  drawLine(lvl.L, dp, lvl, 'סיום');
+  drawObstacles(dp, lvl, t);
+  if (cars) drawCars(cars, dp, lvl, t);
+}
+
+function drawHUD() {
+  const p = G.cars[0], L = G.lvl.L;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 0, W, 52);
+  ctx.textBaseline = 'middle';
+
+  // מקום (שמאל)
+  const rank = ranking().indexOf(p) + 1;
+  ctx.textAlign = 'left';
+  ctx.font = '900 22px Arial, sans-serif';
+  ctx.fillStyle = '#ffd400';
+  ctx.fillText(`מקום ${rank} מתוך 6`, 16, 27);
+
+  // שם השלב (ימין)
+  ctx.textAlign = 'right';
+  ctx.font = 'bold 17px Arial, sans-serif';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(`שלב ${G.lvl.stage} מתוך 9`, W - 16, 27);
+
+  // מד התקדמות
+  const bx = 200, bw = W - 400, by = 27;
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  rr(bx, by - 5, bw, 10, 5); ctx.fill();
+  ctx.fillStyle = 'rgba(255,212,0,0.7)';
+  rr(bx, by - 5, bw * clamp(p.d / L, 0, 1), 10, 5); ctx.fill();
+  // דגל סיום
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(bx + bw + 4, by - 12, 4, 24);
+
+  // סמלי המכוניות על המד (היריבים קודם, השחקן אחרון = למעלה)
+  for (let i = G.cars.length - 1; i >= 0; i--) {
+    const c = G.cars[i], img = IMG[c.def.file];
+    const mx = bx + clamp(c.d / L, 0, 1) * bw;
+    const cw = c.isPlayer ? 40 : 34, chh = c.isPlayer ? 26 : 22;
+    ctx.fillStyle = c.isPlayer ? '#ffd400' : '#ffffff';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    rr(mx - cw / 2, by - chh / 2, cw, chh, 6);
+    ctx.fill(); ctx.stroke();
+    const sc = Math.min((cw - 6) / img.naturalWidth, (chh - 4) / img.naturalHeight);
+    const iw = img.naturalWidth * sc, ih = img.naturalHeight * sc;
+    ctx.drawImage(img, mx - iw / 2, by - ih / 2, iw, ih);
+  }
+}
+
+function drawCountdown() {
+  const txt = G.cd > 0 ? String(Math.ceil(G.cd)) : 'יאללה!';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  outlinedText(txt, W / 2, H * 0.4, '#ffd400', G.cd > 0 ? 120 : 90, 12);
+}
+
+function drawToast() {
+  ctx.font = 'bold 22px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(G.toast).width + 36;
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  rr(W / 2 - tw / 2, 72, tw, 38, 12); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillText(G.toast, W / 2, 91);
+}
+
+/* ========================= לולאה ראשית ========================= */
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  if (G && G.phase !== 'done') {
+    G.toastT = Math.max(0, G.toastT - dt);
+    if (G.phase === 'countdown') {
+      G.t += dt;
+      G.cd -= dt;
+      if (G.cd <= -0.6) G.phase = 'race';
+    } else {
+      step(dt);
+      if (G.phase === 'finishing') {
+        G.endTimer -= dt;
+        if (G.endTimer <= 0) endRace();
+      }
+    }
+  }
+
+  ctx.clearRect(0, 0, W, H);
+  if (G) {
+    drawScene(G.cars[0].d, G.lvl, G.cars, G.t);
+    if (G.phase !== 'done') drawHUD();
+    if (G.phase === 'countdown') drawCountdown();
+    if (G.toastT > 0 && G.phase !== 'done') drawToast();
+  } else {
+    idleT += dt;
+    drawScene((idleT * 90) % (menuLvl.L - 300) + 100, menuLvl, null, idleT);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ========================= ניהול מסכים ========================= */
+function showScreen(id) {
+  ['scr-loading', 'scr-start', 'scr-select', 'scr-finish'].forEach(x => {
+    document.getElementById(x).classList.toggle('hidden', x !== id);
+  });
+}
+
+function resetInput() {
+  input.left = input.right = input.up = input.down = false;
+  document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('on'));
+}
+
+function buildGrid() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  for (let s = 1; s <= 9; s++) {
+    const locked = s > maxUnlocked;
+    const b = document.createElement('button');
+    b.className = 'lvl';
+    b.disabled = locked;
+    b.innerHTML =
+      `<div class="n">${s}</div>` +
+      `<div class="t">${WORLDS[s - 1].name}</div>` +
+      `<div class="r">${locked ? '🔒' : (results[s] ? 'מקום ' + results[s] : '')}</div>`;
+    b.onclick = () => startRace(s);
+    grid.appendChild(b);
+  }
+}
+
+function showSelect() {
+  G = null;
+  resetInput();
+  menuLvl = makeLevel(curStage);
+  buildGrid();
+  document.getElementById('ctrls').classList.add('hidden');
+  showScreen('scr-select');
+}
+
+function startRace(s) {
+  curStage = s;
+  const lvl = makeLevel(s);
+  G = { lvl, cars: makeCars(), t: 0, phase: 'countdown', cd: 3,
+        toast: '', toastT: 0, endTimer: 0 };
+  resetInput();
+  showScreen(null);
+  document.getElementById('ctrls').classList.remove('hidden');
+}
+
+function endRace() {
+  G.phase = 'done';
+  const rank = ranking().indexOf(G.cars[0]) + 1;
+  const s = G.lvl.stage;
+  results[s] = results[s] ? Math.min(results[s], rank) : rank;
+  if (s === maxUnlocked && maxUnlocked < 9) maxUnlocked++;
+  save();
+  showFinish(rank);
+}
+
+function showFinish(rank) {
+  const s = G.lvl.stage;
+  const titles = ['🏆 מקום ראשון!', '🥈 מקום שני!', '🥉 מקום שלישי!'];
+  document.getElementById('finTitle').textContent = rank <= 3 ? titles[rank - 1] : `מקום ${rank} מתוך 6`;
+  document.getElementById('finMsg').textContent =
+    rank === 1 ? 'מדהים! ניצחת את כולם' :
+    rank <= 3 ? 'כמעט! עוד קצת והיית הראשון' :
+    'נסה שוב כדי לשפר את המקום';
+  document.getElementById('btnNext').classList.toggle('hidden', s >= 9);
+  document.getElementById('ctrls').classList.add('hidden');
+  showScreen('scr-finish');
+}
+
+/* ========================= שמירה ========================= */
+function save() {
+  try { localStorage.setItem('racerProgress', JSON.stringify({ maxUnlocked, results })); } catch (e) {}
+}
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem('racerProgress') || 'null');
+    if (d) {
+      maxUnlocked = clamp(d.maxUnlocked || 1, 1, 9);
+      results = d.results || {};
+    }
+  } catch (e) {}
+}
+
+/* ========================= קלט ========================= */
+const keyMap = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+window.addEventListener('keydown', e => {
+  if (keyMap[e.key]) { input[keyMap[e.key]] = true; e.preventDefault(); }
+});
+window.addEventListener('keyup', e => {
+  if (keyMap[e.key]) { input[keyMap[e.key]] = false; e.preventDefault(); }
+});
+window.addEventListener('blur', resetInput);
+
+function bindBtn(id, dir) {
+  const el = document.getElementById(id);
+  const on = e => { e.preventDefault(); input[dir] = true; el.classList.add('on'); };
+  const off = e => { e.preventDefault(); input[dir] = false; el.classList.remove('on'); };
+  el.addEventListener('pointerdown', on);
+  el.addEventListener('pointerup', off);
+  el.addEventListener('pointercancel', off);
+  el.addEventListener('pointerleave', off);
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+bindBtn('bLeft', 'left');
+bindBtn('bRight', 'right');
+bindBtn('bGas', 'up');
+bindBtn('bBrake', 'down');
+
+document.getElementById('btnStart').onclick = showSelect;
+document.getElementById('btnBack').onclick = () => { G = null; showScreen('scr-start'); };
+document.getElementById('btnNext').onclick = () => startRace(Math.min(9, curStage + 1));
+document.getElementById('btnRetry').onclick = () => startRace(curStage);
+document.getElementById('btnSelect').onclick = showSelect;
+document.getElementById('btnMenu').onclick = showSelect;
+
+/* ========================= טעינה והפעלה ========================= */
+function loadAssets() {
+  const files = [...WORLDS.map(w => w.file), ...CARS.map(c => c.file)];
+  let n = 0;
+  return Promise.all(files.map(f => new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => {
+      IMG[f] = im;
+      n++;
+      document.getElementById('loadTxt').textContent = Math.round(n / files.length * 100) + '%';
+      res();
+    };
+    im.onerror = () => rej(new Error('לא נמצא הקובץ ' + f));
+    im.src = f;
+  })));
+}
+
+loadAssets().then(() => {
+  load();
+  menuLvl = makeLevel(1);
+  showScreen('scr-start');
+  requestAnimationFrame(frame);
+}).catch(e => {
+  document.getElementById('loadTxt').textContent = 'שגיאה בטעינה: ' + e.message;
+});
+</script>
+</body>
+</html>
